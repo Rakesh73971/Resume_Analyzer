@@ -2,7 +2,7 @@ from jose import jwt,JWTError
 from datetime import timedelta,datetime
 from fastapi import Depends,status,HTTPException
 from sqlalchemy.orm import Session
-from .models import TokenData
+from .schemas import TokenData
 from . import database,models
 from fastapi.security import OAuth2PasswordBearer
 from .config import settings
@@ -32,6 +32,8 @@ def verify_access_token(token:str,credentials_exception):
         return token_data
     except JWTError:
         raise credentials_exception
+
+        
 def get_current_user(token:str=Depends(oauth2_scheme),db:Session=Depends(database.get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
