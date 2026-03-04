@@ -1,5 +1,5 @@
 from pydantic import BaseModel,EmailStr
-from typing import Optional
+from typing import Optional,List
 from datetime import datetime
 
 
@@ -30,3 +30,15 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     user_id: Optional[int] = None
+
+class JobCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    required_skills: List[str]  
+
+class JobOut(JobCreate):
+    id: int
+    company_id: int
+
+    class Config:
+        from_attributes = True

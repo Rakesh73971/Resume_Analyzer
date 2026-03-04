@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from . import models
 from .database import engine
-from .routes import user,resume,auth
+from .routes import user,resume,auth,job
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(user.router)
 app.include_router(resume.router)
 app.include_router(auth.router)
+app.include_router(job.router)
 
 
 @app.get("/")

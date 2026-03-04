@@ -27,6 +27,7 @@ class User(Base):
         back_populates="user",
         cascade="all, delete"
     )
+    jobs = relationship("Job", back_populates="company", cascade="all, delete")
 
 
 class Resume(Base):
@@ -46,3 +47,16 @@ class Resume(Base):
         server_default=text("now()")
     )
     user = relationship("User", back_populates="resumes")
+
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    required_skills = Column(JSON, nullable=True)  # ✅ JSON column
+
+    company_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    company = relationship("User", back_populates="jobs")
