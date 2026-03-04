@@ -1,64 +1,56 @@
 import os
 import uuid
 import shutil
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
-from fastapi import Path
 from app import models, database
-from app.services.resume_parser import extract_text_from_pdf
+from app.models import Resume
 from app.oauth2 import get_current_user
-
+from app.services.resume_parser import extract_text_from_pdf
 
 router = APIRouter(
     prefix="/resumes",
     tags=["Resumes"]
 )
 
-UPLOAD_DIR = "uploads"
+# Directory for uploaded resumes
+UPLOAD_DIR = "uploads/resumes"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
 
-
-@router.post("/upload")
+# ==============================
+# Upload Resume
+# ==============================
+@router.post("/")
 def upload_resume(
     file: UploadFile = File(...),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-
-
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF files are allowed"
-        )
-
-   
-    unique_filename = f"{uuid.uuid4()}.pdf"
+    # Generate unique filename to avoid conflicts
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    
-    file_bytes = file.file.read()
+    # Save file to disk
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-    extracted_text = extract_text_from_pdf(file_bytes)
+    # Extract text from PDF
+    extracted_text = extract_text_from_pdf(file_path)
 
-    if not extracted_text:
+    if not extracted_text or extracted_text.strip() == "":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not extract text from PDF"
+            status_code=400,
+            detail="Could not extract text from PDF. Make sure the PDF contains selectable text."
         )
 
-    
-    with open(file_path, "wb") as buffer:
-        buffer.write(file_bytes)
-
-    
-    new_resume = models.Resume(
+    # Save to database
+    new_resume = Resume(
         user_id=current_user.id,
-        filename=file.filename,
+        filename=unique_filename,
         file_path=file_path,
-        extracted_text=extracted_text
+        extracted_text=extracted_text,
+        analysis_result=None
     )
 
     db.add(new_resume)
@@ -66,49 +58,48 @@ def upload_resume(
     db.refresh(new_resume)
 
     return {
-        "message": "Resume uploaded successfully",
+        "message": "Resume uploaded and text extracted successfully",
         "resume_id": new_resume.id
     }
 
 
+# ==============================
+# Analyze Resume
+# ==============================
 @router.post("/{resume_id}/analyze")
 def analyze_resume(
     resume_id: int = Path(..., description="Resume ID"),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-
-
+    # Secure query (ownership check inside filter)
     resume = db.query(models.Resume).filter(
-        models.Resume.id == resume_id
+        models.Resume.id == resume_id,
+        models.Resume.user_id == current_user.id
     ).first()
 
     if not resume:
         raise HTTPException(
             status_code=404,
-            detail="Resume not found"
+            detail="Resume not found or not authorized"
         )
-
-
-    if resume.user_id != current_user.id:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized to analyze this resume"
-        )
-
 
     if not resume.extracted_text:
         raise HTTPException(
             status_code=400,
-            detail="No extracted text available"
+            detail="No extracted text available for analysis"
         )
 
+    # Simple analysis logic
+    text = resume.extracted_text
 
     analysis_result = {
-        "word_count": len(resume.extracted_text.split()),
-        "summary": "This is a basic resume analysis"
+        "word_count": len(text.split()),
+        "char_count": len(text),
+        "email_found": "@" in text,
+        "has_numbers": any(char.isdigit() for char in text),
+        "summary": "Basic resume analysis completed."
     }
-
 
     resume.analysis_result = analysis_result
     db.commit()

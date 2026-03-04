@@ -1,17 +1,16 @@
-import fitz  # PyMuPDF
+import pdfplumber
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
+def extract_text_from_pdf(file_path):
     text = ""
 
     try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-
-        for page in doc:
-            text += page.get_text()
-
-        doc.close()
-
-        return text.strip()
-
-    except Exception:
+        with pdfplumber.open(file_path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
+    except Exception as e:
+        print("Extraction error:", e)
         return ""
+
+    return text.strip()
