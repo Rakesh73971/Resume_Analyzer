@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     database_hostname: str
     database_port: str
@@ -9,6 +10,7 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
+    openai_key: str
 
     class Config:
         env_file=".env"
