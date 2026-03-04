@@ -72,34 +72,49 @@ def upload_resume(
 # ==============================
 # Analyze Resume
 # ==============================
-openai.api_key = settings.openai_key
+import google.generativeai as genai
+from google.api_core import exceptions
+import json
+import time
 
-def call_openai_safe(prompt, model="gpt-3.5-turbo-16k", retries=5):
+# Configure Gemini with your new API key
+genai.configure(api_key=settings.gemini_key)
+
+def call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite", retries=5):
     """
-    Call OpenAI with retries for API errors and rate limits
+    Call Gemini with retries for API errors and rate limits.
+    Uses 'response_mime_type' to ensure valid JSON output.
     """
-    for attempt in range(retries):
-        try:
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0
-            )
-            return response['choices'][0]['message']['content']
-        except openai.error.RateLimitError as e:
-            print(f"Rate limit hit: {e}, backing off...")
-            time.sleep(5 * (attempt + 1))  # exponential backoff
-        except openai.error.APIError as e:  # handles 500/503 errors
-            print(f"OpenAI API error: {e}, retrying...")
-            time.sleep(2 ** attempt)
-        except Exception as e:
-            print(f"Unexpected error: {e}, retrying...")
-            time.sleep(2 ** attempt)
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="OpenAI server is unavailable, please try again later."
+    # Initialize the model with JSON configuration
+    model = genai.GenerativeModel(
+        model_name=model_name,
+        generation_config={"response_mime_type": "application/json"}
     )
 
+    for attempt in range(retries):
+        try:
+            # Generate content
+            response = model.generate_content(prompt)
+            
+            # Gemini response objects have a .text attribute
+            return response.text
+
+        except exceptions.ResourceExhausted as e:
+            print(f"Rate limit hit: {e}, backing off...")
+            time.sleep(5 * (attempt + 1))  # Exponential backoff
+        
+        except exceptions.InternalServerError as e:
+            print(f"Gemini API server error: {e}, retrying...")
+            time.sleep(2 ** attempt)
+            
+        except Exception as e:
+            print(f"Unexpected error calling Gemini: {e}")
+            time.sleep(2 ** attempt)
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Gemini service is currently unavailable."
+    )
 
 @router.post("/{resume_id}/analyze")
 def analyze_resume(
@@ -116,28 +131,29 @@ def analyze_resume(
     if not resume.extracted_text:
         raise HTTPException(status_code=400, detail="No text to analyze")
 
-    # 2️⃣ Prepare prompt
+    # 2️⃣ Prepare prompt (Keep it clear, Gemini follows JSON instructions well)
     prompt = f"""
-    Extract structured information from this resume text in JSON format with keys:
-    - skills: list of skills
-    - experience: list of jobs with company, role, years
-    - education: list of degrees with field and year
+    Extract structured information from this resume text into a JSON object.
+    Required keys:
+    - "skills": list of skills
+    - "experience": list of objects with "company", "role", "years"
+    - "education": list of objects with "degree", "field", "year"
 
     Resume Text:
     {resume.extracted_text}
-    Return only valid JSON.
     """
 
-    # 3️⃣ Call OpenAI safely with retries
-    result_text = call_openai_safe(prompt)
+    # 3️⃣ Call Gemini safely
+    # Note: Using Gemini 2.0 Flash is recommended for speed and cost-efficiency
+    result_text = call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite")
 
     # 4️⃣ Convert JSON string to dict
     try:
         analysis_result = json.loads(result_text)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         raise HTTPException(
             status_code=500, 
-            detail="Failed to parse AI response. Response was not valid JSON."
+            detail="Failed to parse Gemini response into valid JSON."
         )
 
     # 5️⃣ Save analysis to DB
@@ -146,6 +162,6 @@ def analyze_resume(
     db.refresh(resume)
 
     return {
-        "message": "Resume analyzed successfully",
+        "message": "Resume analyzed successfully with Gemini",
         "analysis": analysis_result
     }
