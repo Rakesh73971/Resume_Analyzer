@@ -52,11 +52,11 @@ class Resume(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=False)
-    required_skills = Column(JSON, nullable=True)  # ✅ JSON column
-
-    company_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    company = relationship("User", back_populates="jobs")
+    id = Column(Integer, primary_key=True, nullable=False)
+    title = Column(String, unique=True, nullable=False)
+    description = Column(Text)
+    required_skills = Column(Text, nullable=True)
+    min_experience_years = Column(Integer, nullable=True)
+    required_degree = Column(String, nullable=True)  
+    required_field = Column(String, nullable=True)
+    company_id = Column(Integer, nullable=True)

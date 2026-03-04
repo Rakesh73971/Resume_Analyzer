@@ -34,7 +34,10 @@ class TokenData(BaseModel):
 class JobCreate(BaseModel):
     title: str
     description: Optional[str] = None
-    required_skills: List[str]  
+    required_skills: List[str]
+    min_experience_years: Optional[int] = 0
+    required_degree: Optional[str] = None
+    required_field: Optional[str] = None 
 
 class JobOut(JobCreate):
     id: int
