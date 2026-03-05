@@ -5,6 +5,8 @@ from app.schemas import JobCreate,JobOut
 from sqlalchemy.orm import Session
 from app.oauth2 import get_current_user
 from typing import List
+from app.matching.embedding import get_embedding, compute_similarity
+
 
 router = APIRouter(
     prefix='/jobs',
@@ -43,10 +45,8 @@ def create_job(
 def normalize(text: str):
     return text.lower().strip()
 
-
 def tokenize(text: str):
     return set(normalize(text).split())
-
 
 def smart_skill_match(resume_skills, job_skills):
     matched = set()
@@ -57,67 +57,39 @@ def smart_skill_match(resume_skills, job_skills):
         for resume_skill in resume_skills:
             resume_tokens = tokenize(resume_skill)
 
-            # Flexible match:
-            # partial OR token overlap
             if (
                 job_skill.lower() in resume_skill.lower()
                 or resume_skill.lower() in job_skill.lower()
-                or job_tokens & resume_tokens  # word overlap
+                or job_tokens & resume_tokens
             ):
                 matched.add(resume_skill)
                 break
 
     return matched
 
-def calculate_match_score(resume_analysis: dict, job_skills: list, job_title: str):
-    score = 0
-    skills_weight = 70
-    experience_weight = 20
-    education_weight = 10
 
-    # Resume skills
-    resume_skills = resume_analysis.get("skills", [])
-
-    # Use smart matching instead of set intersection
-    matched_skills = smart_skill_match(resume_skills, job_skills)
-
-    # Skill Score
-    skills_score = (
-        (len(matched_skills) / len(job_skills) * skills_weight)
-        if job_skills else 0
-    )
-
-    score += skills_score
-
-    # ---------- Experience Matching ----------
-    exp_score = 0
-    for exp in resume_analysis.get("experience", []):
-        role = (exp.get("role") or "").lower()
-
-        if job_title.lower() in role or role in job_title.lower():
-            exp_score += 10
-
-    score += min(exp_score, experience_weight)
-
-    # ---------- Education Matching ----------
-    edu_score = 0
-    for edu in resume_analysis.get("education", []):
-        field = (edu.get("field") or "").lower()
-
-        if "computer" in field or "cse" in field:
-            edu_score += 5
-
-    score += min(edu_score, education_weight)
-
-    return round(score, 2), list(matched_skills)
-
-@router.get("/{job_id}/matches")
-def get_top_resumes(job_id: int, db: Session = Depends(get_db)):
+@router.get("/{job_id}/ai-matches")
+def get_ai_matches(job_id: int, db: Session = Depends(get_db)):
 
     job = db.query(Job).filter(Job.id == job_id).first()
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # Prepare job text
+    job_text = f"""
+    {job.title}
+    {job.description or ""}
+    {job.required_skills or ""}
+    """
+
+    job_embedding = get_embedding(job_text)
+
+    # Convert job skills string → list
+    if job.required_skills:
+        job_skills = [s.strip() for s in job.required_skills.split(",")]
+    else:
+        job_skills = []
 
     resumes = db.query(Resume).filter(
         Resume.analysis_result.isnot(None)
@@ -125,36 +97,35 @@ def get_top_resumes(job_id: int, db: Session = Depends(get_db)):
 
     matches = []
 
-    # Convert required_skills string → list
-    if job.required_skills:
-        job_skills = [
-            skill.strip()
-            for skill in job.required_skills.split(",")
-        ]
-    else:
-        job_skills = []
-
     for resume in resumes:
-        score, skills_matched = calculate_match_score(
-            resume.analysis_result,
-            job_skills,
-            job.title
+
+        resume_text = resume.extracted_text
+        resume_embedding = get_embedding(resume_text)
+
+        similarity_score = compute_similarity(
+            job_embedding,
+            resume_embedding
         )
 
-        if score > 0:
-            matches.append({
-                "resume_id": resume.id,
-                "user_id": resume.user_id,
-                "score": score,
-                "skills_matched": skills_matched
-            })
+        # 🔥 Extract matched skills
+        resume_skills = resume.analysis_result.get("skills", [])
+        matched_skills = smart_skill_match(resume_skills, job_skills)
 
-    matches.sort(key=lambda x: x["score"], reverse=True)
+        matches.append({
+            "resume_id": resume.id,
+            "user_id": resume.user_id,
+            "similarity_score": round(similarity_score * 100, 2),
+            "skills_matched": list(matched_skills)
+        })
+
+    matches.sort(
+        key=lambda x: x["similarity_score"],
+        reverse=True
+    )
 
     return {
         "job_id": job.id,
         "job_title": job.title,
         "total_resumes_checked": len(resumes),
-        "total_matches_found": len(matches),
-        "matches": matches[:10]
+        "ai_matches": matches[:10]
     }
