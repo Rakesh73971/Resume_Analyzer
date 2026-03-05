@@ -3,13 +3,18 @@ import uuid
 import shutil
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Path,status
 from sqlalchemy.orm import Session
-import openai, json
+import json
 import time
 from app import models, database
 from app.models import Resume
 from app.oauth2 import get_current_user
 from app.services.resume_parser import extract_text_from_pdf
 from app.config import settings
+import google.generativeai as genai
+from google.api_core import exceptions
+import json
+import time
+
 
 
 
@@ -18,7 +23,7 @@ router = APIRouter(
     tags=["Resumes"]
 )
 
-# Directory for uploaded resumes
+
 UPLOAD_DIR = "uploads/resumes"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -33,15 +38,15 @@ def upload_resume(
     current_user: models.User = Depends(get_current_user)
 ):
     
-    # Generate unique filename to avoid conflicts
+    
     unique_filename = f"{uuid.uuid4()}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    # Save file to disk
+    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Extract text from PDF
+    
     extracted_text = extract_text_from_pdf(file_path)
 
     if not extracted_text or extracted_text.strip() == "":
@@ -50,7 +55,7 @@ def upload_resume(
             detail="Could not extract text from PDF. Make sure the PDF contains selectable text."
         )
 
-    # Save to database
+    
     new_resume = Resume(
         user_id=current_user.id,
         filename=unique_filename,
@@ -72,12 +77,8 @@ def upload_resume(
 # ==============================
 # Analyze Resume
 # ==============================
-import google.generativeai as genai
-from google.api_core import exceptions
-import json
-import time
 
-# Configure Gemini with your new API key
+
 genai.configure(api_key=settings.gemini_key)
 
 def call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite", retries=5):
@@ -85,7 +86,7 @@ def call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite", retries=5):
     Call Gemini with retries for API errors and rate limits.
     Uses 'response_mime_type' to ensure valid JSON output.
     """
-    # Initialize the model with JSON configuration
+    
     model = genai.GenerativeModel(
         model_name=model_name,
         generation_config={"response_mime_type": "application/json"}
@@ -93,10 +94,10 @@ def call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite", retries=5):
 
     for attempt in range(retries):
         try:
-            # Generate content
+        
             response = model.generate_content(prompt)
             
-            # Gemini response objects have a .text attribute
+           
             return response.text
 
         except exceptions.ResourceExhausted as e:
@@ -122,7 +123,7 @@ def analyze_resume(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # 1️⃣ Fetch resume
+    
     resume = db.query(models.Resume).filter(models.Resume.id == resume_id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -131,7 +132,7 @@ def analyze_resume(
     if not resume.extracted_text:
         raise HTTPException(status_code=400, detail="No text to analyze")
 
-    # 2️⃣ Prepare prompt (Keep it clear, Gemini follows JSON instructions well)
+    
     prompt = f"""
     Extract structured information from this resume text into a JSON object.
     Required keys:
@@ -143,11 +144,10 @@ def analyze_resume(
     {resume.extracted_text}
     """
 
-    # 3️⃣ Call Gemini safely
-    # Note: Using Gemini 2.0 Flash is recommended for speed and cost-efficiency
+   
     result_text = call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite")
 
-    # 4️⃣ Convert JSON string to dict
+    
     try:
         analysis_result = json.loads(result_text)
     except (json.JSONDecodeError, TypeError):
@@ -156,7 +156,7 @@ def analyze_resume(
             detail="Failed to parse Gemini response into valid JSON."
         )
 
-    # 5️⃣ Save analysis to DB
+    
     resume.analysis_result = analysis_result
     db.commit()
     db.refresh(resume)

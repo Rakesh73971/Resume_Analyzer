@@ -41,7 +41,7 @@ class JobCreate(BaseModel):
 
 class JobOut(JobCreate):
     id: int
-    company_id: int
+    user_id: int
 
     class Config:
         from_attributes = True

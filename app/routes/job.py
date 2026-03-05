@@ -18,9 +18,9 @@ def create_job(
     current_user: User = Depends(get_current_user)
 ):
 
-    # Prevent duplicate job title for the same company
+    
     existing_job = db.query(Job).filter(
-        Job.company_id == current_user.id,
+        Job.user_id == current_user.id,
         Job.title == job.title
     ).first()
 
@@ -30,8 +30,8 @@ def create_job(
             detail="You already posted a job with this title"
         )
 
-    # Save job
-    new_job = Job(**job.dict(), company_id=current_user.id)
+    
+    new_job = Job(**job.dict(), user_id=current_user.id)
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
@@ -39,56 +39,109 @@ def create_job(
     return new_job
 
 
+
+def normalize(text: str):
+    return text.lower().strip()
+
+
+def tokenize(text: str):
+    return set(normalize(text).split())
+
+
+def smart_skill_match(resume_skills, job_skills):
+    matched = set()
+
+    for job_skill in job_skills:
+        job_tokens = tokenize(job_skill)
+
+        for resume_skill in resume_skills:
+            resume_tokens = tokenize(resume_skill)
+
+            # Flexible match:
+            # partial OR token overlap
+            if (
+                job_skill.lower() in resume_skill.lower()
+                or resume_skill.lower() in job_skill.lower()
+                or job_tokens & resume_tokens  # word overlap
+            ):
+                matched.add(resume_skill)
+                break
+
+    return matched
+
 def calculate_match_score(resume_analysis: dict, job_skills: list, job_title: str):
     score = 0
     skills_weight = 70
     experience_weight = 20
     education_weight = 10
 
-    # 1️⃣ Skills match
-    resume_skills = [s.lower().strip() for s in resume_analysis.get("skills", [])]
-    job_skills_set = set(s.lower().strip() for s in job_skills)
-    matched_skills = set(resume_skills) & job_skills_set
-    skills_score = (len(matched_skills) / len(job_skills_set) * skills_weight) if job_skills_set else 0
+    # Resume skills
+    resume_skills = resume_analysis.get("skills", [])
+
+    # Use smart matching instead of set intersection
+    matched_skills = smart_skill_match(resume_skills, job_skills)
+
+    # Skill Score
+    skills_score = (
+        (len(matched_skills) / len(job_skills) * skills_weight)
+        if job_skills else 0
+    )
+
     score += skills_score
 
-    # 2️⃣ Experience match
+    # ---------- Experience Matching ----------
     exp_score = 0
     for exp in resume_analysis.get("experience", []):
         role = (exp.get("role") or "").lower()
-        years = exp.get("years") or 0
-        if role in job_title.lower():
-            exp_score += min(years, 5) * 4  # max 20 points
+
+        if job_title.lower() in role or role in job_title.lower():
+            exp_score += 10
+
     score += min(exp_score, experience_weight)
 
-    # 3️⃣ Education match
+    # ---------- Education Matching ----------
     edu_score = 0
     for edu in resume_analysis.get("education", []):
-        degree = (edu.get("degree") or "").lower()
         field = (edu.get("field") or "").lower()
-        if "cse" in field or "computer" in field:
+
+        if "computer" in field or "cse" in field:
             edu_score += 5
+
     score += min(edu_score, education_weight)
 
     return round(score, 2), list(matched_skills)
 
 @router.get("/{job_id}/matches")
 def get_top_resumes(job_id: int, db: Session = Depends(get_db)):
+
     job = db.query(Job).filter(Job.id == job_id).first()
+
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    
-    resumes = db.query(Resume).all()
+    resumes = db.query(Resume).filter(
+        Resume.analysis_result.isnot(None)
+    ).all()
+
     matches = []
 
-    job_skills = job.required_skills if job.required_skills else []
+    # Convert required_skills string → list
+    if job.required_skills:
+        job_skills = [
+            skill.strip()
+            for skill in job.required_skills.split(",")
+        ]
+    else:
+        job_skills = []
 
     for resume in resumes:
-        if resume.analysis_result and "skills" in resume.analysis_result:
-            score, skills_matched = calculate_match_score(
-                resume.analysis_result, job_skills, job.title
-            )
+        score, skills_matched = calculate_match_score(
+            resume.analysis_result,
+            job_skills,
+            job.title
+        )
+
+        if score > 0:
             matches.append({
                 "resume_id": resume.id,
                 "user_id": resume.user_id,
@@ -98,11 +151,10 @@ def get_top_resumes(job_id: int, db: Session = Depends(get_db)):
 
     matches.sort(key=lambda x: x["score"], reverse=True)
 
-
-    top_matches = matches[:10]
-
     return {
         "job_id": job.id,
         "job_title": job.title,
-        "matches": top_matches
+        "total_resumes_checked": len(resumes),
+        "total_matches_found": len(matches),
+        "matches": matches[:10]
     }

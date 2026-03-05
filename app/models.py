@@ -27,7 +27,7 @@ class User(Base):
         back_populates="user",
         cascade="all, delete"
     )
-    jobs = relationship("Job", back_populates="company", cascade="all, delete")
+    jobs = relationship("Job", back_populates="user", cascade="all, delete")
 
 
 class Resume(Base):
@@ -52,11 +52,15 @@ class Resume(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
+
     id = Column(Integer, primary_key=True, nullable=False)
     title = Column(String, unique=True, nullable=False)
     description = Column(Text)
     required_skills = Column(Text, nullable=True)
     min_experience_years = Column(Integer, nullable=True)
-    required_degree = Column(String, nullable=True)  
+    required_degree = Column(String, nullable=True)
     required_field = Column(String, nullable=True)
-    company_id = Column(Integer, nullable=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"))
+
+    user = relationship("User", back_populates="jobs")
