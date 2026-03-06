@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 # copy the requirements
 COPY requirements.txt .
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # copy the project
 COPY . .
