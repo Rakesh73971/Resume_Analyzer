@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int
     gemini_key: str
 
-    class Config:
-        env_file=".env"
+    
+    model_config = {
+        "env_file": ".env",
+        "extra": "ignore",
+    }
 
 settings = Settings()
