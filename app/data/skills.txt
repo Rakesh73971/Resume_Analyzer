@@ -1,0 +1,28 @@
+python
+fastapi
+flask
+docker
+kubernetes
+aws
+azure
+gcp
+sql
+postgres
+mysql
+nlp
+machine learning
+pytorch
+tensorflow
+scikit-learn
+pandas
+numpy
+spark
+react
+javascript
+nodejs
+ci/cd
+github actions
+redis
+rabbitmq
+celery
+docker-compose
