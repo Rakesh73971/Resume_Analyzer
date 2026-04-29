@@ -83,7 +83,7 @@ def extract_entities_and_skills(text: str) -> Dict:
             ents.setdefault(ent.label_, []).append(ent.text)
         result["entities"] = ents
 
-    # skills: simple substring match against a skills list
+    
     text_lc = text.lower()
     found = set()
     for skill in skills_master:
