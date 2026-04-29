@@ -102,3 +102,6 @@ urllib3==2.6.3
 uvicorn==0.41.0
 yarl==1.23.0
 gunicorn
+spacy>=3.5.4
+prometheus-client>=0.16.0
+faiss-cpu
