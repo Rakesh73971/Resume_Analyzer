@@ -3,6 +3,13 @@ from . import models
 from .database import engine
 from .routes import user,resume,auth,job
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+
+try:
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    _has_prom = True
+except Exception:
+    _has_prom = False
 
 
 app = FastAPI()
@@ -28,3 +35,11 @@ app.include_router(job.router)
 @app.get("/")
 def root():
     return {"message": "Hello World"}
+
+
+@app.get("/metrics")
+def metrics():
+    if not _has_prom:
+        return Response(content=b"prometheus_client not installed", media_type="text/plain", status_code=501)
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
