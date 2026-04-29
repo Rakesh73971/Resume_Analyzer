@@ -10,7 +10,7 @@ from app.models import Resume
 from app.oauth2 import get_current_user
 from app.services.resume_parser import extract_text_from_pdf
 from app.config import settings
-import google.generativeai as genai
+from google import genai
 from google.api_core import exceptions
 import json
 import time
@@ -79,30 +79,29 @@ def upload_resume(
 # ==============================
 
 
-genai.configure(api_key=settings.gemini_key)
+client = genai.Client(api_key=settings.gemini_key)
 
 def call_gemini_safe(prompt, model_name="gemini-2.5-flash-lite", retries=5):
     """
-    Call Gemini with retries for API errors and rate limits.
-    Uses 'response_mime_type' to ensure valid JSON output.
+    Call Gemini using the new SDK with retries and JSON enforcement.
     """
-    
-    model = genai.GenerativeModel(
-        model_name=model_name,
-        generation_config={"response_mime_type": "application/json"}
-    )
-
     for attempt in range(retries):
         try:
-        
-            response = model.generate_content(prompt)
             
-           
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={
+                    'response_mime_type': 'application/json'
+                }
+            )
+            
+            
             return response.text
 
         except exceptions.ResourceExhausted as e:
             print(f"Rate limit hit: {e}, backing off...")
-            time.sleep(5 * (attempt + 1))  # Exponential backoff
+            time.sleep(5 * (attempt + 1))  
         
         except exceptions.InternalServerError as e:
             print(f"Gemini API server error: {e}, retrying...")
