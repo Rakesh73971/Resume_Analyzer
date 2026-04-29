@@ -76,7 +76,7 @@ def get_ai_matches(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Prepare job text
+
     job_text = f"""
     {job.title}
     {job.description or ""}
@@ -85,7 +85,7 @@ def get_ai_matches(job_id: int, db: Session = Depends(get_db)):
 
     job_embedding = get_embedding(job_text)
 
-    # Convert job skills string → list
+    
     if job.required_skills:
         job_skills = [s.strip() for s in job.required_skills.split(",")]
     else:
@@ -107,7 +107,7 @@ def get_ai_matches(job_id: int, db: Session = Depends(get_db)):
             resume_embedding
         )
 
-        # 🔥 Extract matched skills
+        
         resume_skills = resume.analysis_result.get("skills", [])
         matched_skills = smart_skill_match(resume_skills, job_skills)
 
